@@ -10,15 +10,14 @@ I used [Hidden Bar](https://github.com/dwarvesf/hidden) for years. On macOS 27 i
 
 ## Install
 
-Download `Tuck.zip` from the [latest release](https://github.com/frizurd/tuck/releases/latest), unzip it, and move **Tuck.app** to Applications. The release isn't notarized yet, so the first time you open it macOS will block it. Go to System Settings → Privacy & Security and click **Open Anyway**.
-
-You can also build it yourself:
+Build it from source. Prebuilt downloads will go on the [Releases](https://github.com/frizurd/tuck/releases) page once there's a notarized build.
 
 ```sh
 git clone https://github.com/frizurd/tuck.git
 cd tuck
 ./build.sh
-open build/Tuck.app
+cp -R build/Tuck.app /Applications/
+open /Applications/Tuck.app
 ```
 
 You'll need Xcode 15 or newer. Tuck runs on macOS 14 Sonoma and later, and it has no third-party dependencies.

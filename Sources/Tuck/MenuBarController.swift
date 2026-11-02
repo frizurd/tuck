@@ -27,7 +27,11 @@ final class MenuBarController: NSObject {
     private var subscriptions = Set<AnyCancellable>()
 
     /// Width of a visible divider: wide enough to grab while ⌘-dragging.
-    private let dividerWidth: CGFloat = 14
+    private var dividerWidth: CGFloat { showsDividerLine ? 14 : 4 }
+
+    /// The line only matters while arranging icons, so it's off once setup is done.
+    /// ⌃-click the chevron to bring it back.
+    private var showsDividerLine: Bool { preferences.showDivider || !preferences.hasSeenWelcome }
 
     init(preferences: Preferences) {
         self.preferences = preferences
@@ -40,18 +44,26 @@ final class MenuBarController: NSObject {
         dividerItem.autosaveName = "tuck.divider"
         configure(toggleItem, label: "Tuck", action: #selector(toggleClicked))
         configure(dividerItem, label: "Tuck divider", action: #selector(dividerClicked))
-        dividerItem.button?.image = Glyphs.divider
+        dividerItem.length = dividerWidth
+        dividerItem.button?.image = showsDividerLine ? Glyphs.divider : nil
         dividerItem.button?.toolTip = "Icons left of this line are hidden.\n⌘-drag icons across it to choose."
 
         if preferences.alwaysHiddenSection { addAlwaysHiddenItem() }
         observePreferences()
         watchForAccessibilityGrant()
+        startMenuWatch()
         // Each app has its own menus, so the divider's ideal width changes with the front app.
         NSWorkspace.shared.notificationCenter
             .publisher(for: NSWorkspace.didActivateApplicationNotification)
             .sink { [weak self] _ in
                 guard let self, AppMenus.isTrusted else { return }
-                refreshStretchedDividers()
+                // The new app's menus may be longer than the old ones. A divider sized for the
+                // old menus would run into them and be ignored, bringing hidden icons back, so
+                // switch to the notch-based width (always valid) until the new menus are measured.
+                restretch(readMenus: false)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                    self?.restretch(readMenus: true)
+                }
             }
             .store(in: &subscriptions)
         // Displays come and go, and the notch only exists on the built-in one.
@@ -112,9 +124,9 @@ final class MenuBarController: NSObject {
         item.button?.image = nil
         item.length = length
         guard stretched == nil else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak item] in
-            guard let item, item.length == length else { return }
-            item.button?.image = glyph
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self, weak item] in
+            guard let self, let item, item.length == length else { return }
+            item.button?.image = showsDividerLine ? glyph : nil
         }
     }
 
@@ -138,15 +150,18 @@ final class MenuBarController: NSObject {
 
     /// The width that pushes every icon left of a divider out of the menu bar.
     private func pushLength(dividerMaxX: CGFloat) -> CGFloat {
-        let screen = toggleItem.button?.window?.screen ?? NSScreen.main
-        let target = screen.map {
-            PushLength.targetLeftEdge(screen: $0.frame, notchLeftArea: $0.auxiliaryTopLeftArea,
-                                      notchRightArea: $0.auxiliaryTopRightArea, appMenusMaxX: AppMenus.maxX())
-        } ?? 0
+        pushLength(dividerMaxX: dividerMaxX, appMenusMaxX: AppMenus.maxX())
+    }
+
+    private func pushLength(dividerMaxX: CGFloat, appMenusMaxX: CGFloat?) -> CGFloat {
+        guard let screen = toggleItem.button?.window?.screen ?? NSScreen.main else { return legacyPushLength }
         let legacy = !ProcessInfo.processInfo.isOperatingSystemAtLeast(
             OperatingSystemVersion(majorVersion: 26, minorVersion: 0, patchVersion: 0))
-        let length = PushLength.compute(dividerMaxX: dividerMaxX, targetLeftEdge: target, legacy: legacy)
-        log.debug("push dividerMaxX \(dividerMaxX, privacy: .public) target \(target, privacy: .public) length \(length, privacy: .public)")
+        let length = PushLength.compute(dividerMaxX: dividerMaxX, screen: screen.frame,
+                                        notchLeftArea: screen.auxiliaryTopLeftArea,
+                                        notchRightArea: screen.auxiliaryTopRightArea,
+                                        appMenusMaxX: appMenusMaxX, legacy: legacy)
+        log.debug("push dividerMaxX \(dividerMaxX, privacy: .public) menus \(String(describing: appMenusMaxX), privacy: .public) length \(length, privacy: .public)")
         return length
     }
 
@@ -156,28 +171,57 @@ final class MenuBarController: NSObject {
         let timer = Timer(timeInterval: 2, repeats: true) { [weak self] timer in
             guard AppMenus.isTrusted else { return }
             timer.invalidate()
-            MainActor.assumeIsolated { self?.refreshStretchedDividers() }
+            MainActor.assumeIsolated { self?.restretch(readMenus: true) }
         }
         RunLoop.main.add(timer, forMode: .common)
     }
 
-    /// Re-measures without restarting the auto-hide timer.
-    func refreshStretchedDividers() {
-        guard let positions = currentPositions(), positions.dividerIsUsable else { return }
-        let target = visibility
-        // The new app's menus are laid out a moment after activation.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-            guard let self, visibility == target else { return }
-            apply(lengths: DividerLengths.resolve(target, positions: positions, push: pushLength))
+    /// Re-sizes stretched dividers in place, without changing state or the auto-hide timer.
+    private func restretch(readMenus: Bool) {
+        guard visibility != .showingAll, let positions = currentPositions(), positions.dividerIsUsable else { return }
+        let menus = readMenus ? AppMenus.maxX() : nil
+        apply(lengths: DividerLengths.resolve(visibility, positions: positions) {
+            pushLength(dividerMaxX: $0, appMenusMaxX: menus)
+        })
+    }
+
+    /// Apps can change their menus without being switched away from, so while a divider is
+    /// stretched to the menus' edge, keep checking that edge.
+    private func startMenuWatch() {
+        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, AppMenus.isTrusted, self.visibility != .showingAll else { return }
+                let natural = self.dividerWidth
+                let stretched = self.dividerItem.length != natural
+                    || (self.alwaysHiddenItem.map { $0.length != natural } ?? false)
+                if stretched { self.restretch(readMenus: true) }
+            }
         }
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     // MARK: Clicks
 
+    /// Showing the line also shows the icons, since the point is to rearrange them.
+    private func toggleDividerLine() {
+        preferences.showDivider.toggle()
+        if preferences.showDivider, !visibility.isRevealed { apply(.shown) }
+    }
+
+    private func dividerLineChanged() {
+        apply(visibility, explainIfMisplaced: false)
+        for (item, glyph) in [(dividerItem, Glyphs.divider), (alwaysHiddenItem, Glyphs.alwaysHiddenDivider)] {
+            guard let item, item.length == dividerWidth else { continue }
+            item.button?.image = showsDividerLine ? glyph : nil
+        }
+    }
+
     @objc private func toggleClicked() {
         guard let event = NSApp.currentEvent else { return }
-        if event.type == .rightMouseUp || event.modifierFlags.contains(.control) {
+        if event.type == .rightMouseUp {
             showMenu(from: toggleItem)
+        } else if event.modifierFlags.contains(.control) {
+            toggleDividerLine()
         } else if event.modifierFlags.contains(.option) {
             apply(visibility == .showingAll ? .hidden : .showingAll)
         } else {
@@ -210,8 +254,8 @@ final class MenuBarController: NSObject {
         case .hidden:
             button.setAccessibilityLabel("Show hidden menu bar icons")
             button.toolTip = preferences.alwaysHiddenSection
-                ? "Click to show hidden icons\n⌥-click to show everything\nRight-click for options"
-                : "Click to show hidden icons\nRight-click for options"
+                ? "Click to show hidden icons\n⌥-click to show everything\n⌃-click to show the divider line\nRight-click for options"
+                : "Click to show hidden icons\n⌃-click to show the divider line\nRight-click for options"
         case .shown, .showingAll:
             button.setAccessibilityLabel("Hide menu bar icons")
             button.toolTip = "Click to hide icons\nRight-click for options"
@@ -229,6 +273,10 @@ final class MenuBarController: NSObject {
             all.state = visibility == .showingAll ? .on : .off
             menu.addItem(all)
         }
+        let line = menuItem("Show Divider Line", #selector(menuDividerLine), key: "")
+        line.state = preferences.showDivider ? .on : .off
+        line.toolTip = "Shortcut: ⌃-click the chevron"
+        menu.addItem(line)
         menu.addItem(.separator())
         menu.addItem(menuItem("Settings…", #selector(menuSettings), key: ","))
         menu.addItem(menuItem("How to Use Tuck", #selector(menuWelcome), key: ""))
@@ -253,6 +301,7 @@ final class MenuBarController: NSObject {
     @objc private func menuToggle() { apply(visibility.isRevealed ? .hidden : .shown) }
     @objc private func menuShowAll() { apply(visibility == .showingAll ? .hidden : .showingAll) }
     @objc private func menuSettings() { openSettings() }
+    @objc private func menuDividerLine() { toggleDividerLine() }
     @objc private func menuWelcome() { openWelcome() }
     @objc private func menuQuit() { NSApp.terminate(nil) }
     @objc private func menuAbout() {
@@ -321,7 +370,7 @@ final class MenuBarController: NSObject {
         let item = NSStatusBar.system.statusItem(withLength: dividerWidth)
         item.autosaveName = "tuck.always-hidden"
         configure(item, label: "Tuck always-hidden divider", action: #selector(dividerClicked))
-        item.button?.image = Glyphs.alwaysHiddenDivider
+        item.button?.image = showsDividerLine ? Glyphs.alwaysHiddenDivider : nil
         item.button?.toolTip = "Icons left of this line stay hidden until you ⌥-click the chevron."
         alwaysHiddenItem = item
     }
@@ -346,6 +395,12 @@ final class MenuBarController: NSObject {
                     DispatchQueue.main.async { self.apply(self.visibility == .showingAll ? .shown : self.visibility) }
                 }
             }
+            .store(in: &subscriptions)
+
+        Publishers.CombineLatest(preferences.$showDivider, preferences.$hasSeenWelcome)
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.dividerLineChanged() }
             .store(in: &subscriptions)
 
         preferences.$scrollToToggle

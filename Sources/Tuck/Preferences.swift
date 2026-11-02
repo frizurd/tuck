@@ -25,6 +25,9 @@ final class Preferences: ObservableObject {
             defaults.set(data, forKey: Key.shortcut)
         }
     }
+    @Published var showDivider: Bool {
+        didSet { defaults.set(showDivider, forKey: Key.showDivider) }
+    }
     @Published var hasSeenWelcome: Bool {
         didSet { defaults.set(hasSeenWelcome, forKey: Key.hasSeenWelcome) }
     }
@@ -39,13 +42,15 @@ final class Preferences: ObservableObject {
             Key.autoHideDelay: AutoHideDelay.defaultSeconds,
             Key.alwaysHiddenSection: false,
             Key.scrollToToggle: true,
-            Key.hasSeenWelcome: false
+            Key.hasSeenWelcome: false,
+            Key.showDivider: false
         ])
         autoHide = defaults.bool(forKey: Key.autoHide)
         autoHideDelay = AutoHideDelay.clamp(defaults.double(forKey: Key.autoHideDelay))
         alwaysHiddenSection = defaults.bool(forKey: Key.alwaysHiddenSection)
         scrollToToggle = defaults.bool(forKey: Key.scrollToToggle)
         hasSeenWelcome = defaults.bool(forKey: Key.hasSeenWelcome)
+        showDivider = defaults.bool(forKey: Key.showDivider)
         shortcut = defaults.data(forKey: Key.shortcut).flatMap { try? JSONDecoder().decode(Shortcut.self, from: $0) }
     }
 
@@ -56,5 +61,6 @@ final class Preferences: ObservableObject {
         static let scrollToToggle = "scrollToToggle"
         static let shortcut = "shortcut"
         static let hasSeenWelcome = "hasSeenWelcome"
+        static let showDivider = "showDivider"
     }
 }

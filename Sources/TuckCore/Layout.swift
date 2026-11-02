@@ -18,48 +18,53 @@ public let legacyPushLength: CGFloat = 10_000
 
 /// How wide a divider must be to hide the icons on its left.
 ///
-/// macOS 26 and later lay status items out right to left. An item that can't be placed
-/// moves into the system overflow (the `«` in the menu bar) together with every item on
-/// its left. An item that would run into the app menus is ignored instead, which is why
-/// the classic 10,000 pt divider stopped working.
+/// What macOS 26 and later do with a stretched status item, measured on macOS 27:
+/// - Longer than about half the screen: the item is ignored, so nothing hides.
+///   This is why the classic 10,000 pt divider stopped working.
+/// - Shorter, with free menu bar space left of it: icons that no longer fit go into the
+///   system overflow, and macOS draws a `«` in that free space.
+/// - Reaching the app menus: there's no free space for a `«`, so the icons that don't
+///   fit are dropped quietly.
 ///
-/// An item that runs into the app menus doesn't fit anywhere, so macOS drops it quietly,
-/// without the `«`. So when Tuck can read where the app menus end (that needs
-/// Accessibility access), it stretches the divider to just short of them: no room is
-/// left for any icon, and no `«` appears.
-///
-/// Without that access, Tuck aims the divider's left edge at the middle of the notch.
-/// It can't be placed there, so macOS moves it and every icon on its left into the
-/// system overflow. That always hides them, but macOS shows a `«` while they're hidden.
+/// So when Tuck can read where the app menus end (Accessibility) and reaching them stays
+/// within the limit, it does that. Otherwise it aims at the middle of the notch, which
+/// always hides but shows the `«`.
 public enum PushLength {
-    /// Room left between the app menus and the stretched divider. Less than any status
-    /// icon needs, so nothing fits in it, but enough to absorb the item's own padding.
+    /// Room kept between the app menus and a stretched divider, smaller than a `«`.
     public static let menuGap: CGFloat = 10
+    /// Stretched items longer than about half the screen are ignored by macOS.
+    public static func maximum(screenWidth: CGFloat) -> CGFloat { screenWidth / 2 - 24 }
 
+    /// The width that hides every icon left of a divider whose right edge is `dividerMaxX`.
     /// - Parameters:
-    ///   - dividerMaxX: the divider's right edge, which stays put while it grows leftwards.
-    ///   - targetLeftEdge: where the stretched divider's left edge should land.
+    ///   - notchLeftArea, notchRightArea: `NSScreen.auxiliaryTopLeftArea` / `...RightArea`.
+    ///   - appMenusMaxX: right edge of the frontmost app's menus, when readable.
     ///   - legacy: true before macOS 26, where an oversized item simply runs off screen.
-    public static func compute(dividerMaxX: CGFloat, targetLeftEdge: CGFloat, legacy: Bool) -> CGFloat {
+    public static func compute(dividerMaxX: CGFloat, screen: CGRect, notchLeftArea: CGRect?,
+                               notchRightArea: CGRect?, appMenusMaxX: CGFloat?, legacy: Bool) -> CGFloat {
         if legacy { return legacyPushLength }
-        return max(dividerMaxX - targetLeftEdge, 1)
+        let cap = maximum(screenWidth: screen.width)
+        if let menus = appMenusMaxX, menus > screen.minX, menus < dividerMaxX {
+            let reachMenus = dividerMaxX - menus - menuGap
+            if reachMenus <= cap { return max(reachMenus, 1).rounded(.up) }
+        }
+        let target: CGFloat
+        if let notch = notch(screen: screen, left: notchLeftArea, right: notchRightArea) {
+            target = (notch.lowerBound + notch.upperBound) / 2
+        } else {
+            // No notch and no readable menus: assume the menus use under half the bar.
+            target = screen.midX
+        }
+        return min(max(dividerMaxX - target, 1), cap).rounded(.down)
     }
 
-    /// Where the stretched divider's left edge should land.
-    /// - Parameter appMenusMaxX: the right edge of the frontmost app's menus, when readable.
-    public static func targetLeftEdge(screen: CGRect, notchLeftArea: CGRect?, notchRightArea: CGRect?,
-                                      appMenusMaxX: CGFloat? = nil) -> CGFloat {
-        if let appMenusMaxX, appMenusMaxX > screen.minX, appMenusMaxX < screen.maxX {
-            return appMenusMaxX + menuGap
-        }
-        if let left = notchLeftArea, let right = notchRightArea, right.minX > left.maxX {
-            let notchMid = (left.maxX + right.minX) / 2
-            // NSScreen reports these areas relative to the screen on some systems, globally on others.
-            let isGlobal = right.minX >= screen.minX && right.maxX <= screen.maxX + 1
-            return isGlobal ? notchMid : screen.minX + notchMid
-        }
-        // Without a notch or readable menus, assume the menus take less than half the bar.
-        return screen.midX
+    /// The notch's horizontal extent in global coordinates.
+    static func notch(screen: CGRect, left: CGRect?, right: CGRect?) -> ClosedRange<CGFloat>? {
+        guard let left, let right, right.minX > left.maxX else { return nil }
+        // NSScreen reports these areas relative to the screen on some systems, globally on others.
+        let isGlobal = right.minX >= screen.minX && right.maxX <= screen.maxX + 1
+        let offset = isGlobal ? 0 : screen.minX
+        return (left.maxX + offset)...(right.minX + offset)
     }
 }
 

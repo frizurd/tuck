@@ -69,41 +69,49 @@ final class PushLengthTests: XCTestCase {
     let notchLeft = CGRect(x: 0, y: 1085, width: 771.5, height: 32)
     let notchRight = CGRect(x: 956.5, y: 1085, width: 771.5, height: 32)
 
-    func testAimsAtTheMiddleOfTheNotch() {
-        XCTAssertEqual(PushLength.targetLeftEdge(screen: screen, notchLeftArea: notchLeft, notchRightArea: notchRight), 864)
-        XCTAssertEqual(PushLength.compute(dividerMaxX: 1100, targetLeftEdge: 864, legacy: false), 236)
+    func push(_ maxX: CGFloat, menus: CGFloat?, screen: CGRect? = nil, notch: Bool = true) -> CGFloat {
+        PushLength.compute(dividerMaxX: maxX, screen: screen ?? self.screen,
+                           notchLeftArea: notch ? notchLeft : nil, notchRightArea: notch ? notchRight : nil,
+                           appMenusMaxX: menus, legacy: false)
+    }
+
+    func testReachesLongMenus() {
+        // Mail's menus end around x=534: reaching them leaves no room for a «.
+        XCTAssertEqual(push(1348, menus: 534), 804)
+    }
+
+    func testShortMenusOutOfReachFallBackToTheNotch() {
+        // Reaching x=370 would take 968 pt, more than macOS accepts.
+        XCTAssertEqual(push(1348, menus: 370), 484)
+    }
+
+    func testFallsBackWhenMenusAreUnreadable() {
+        XCTAssertEqual(push(1348, menus: nil), 484)
+    }
+
+    func testNeverLongerThanMacOSAccepts() {
+        XCTAssertLessThanOrEqual(push(1720, menus: nil), PushLength.maximum(screenWidth: 1728))
+        XCTAssertLessThanOrEqual(push(1720, menus: 300), PushLength.maximum(screenWidth: 1728))
+    }
+
+    func testNoNotchReachesTheMenus() {
+        let external = CGRect(x: 1728, y: 0, width: 2560, height: 1440)
+        XCTAssertEqual(push(3500, menus: 2300, screen: external, notch: false), 1190)
+        XCTAssertEqual(push(4000, menus: nil, screen: external, notch: false), 992)
     }
 
     func testNotchAreasRelativeToAnOffsetScreen() {
         let offset = CGRect(x: -1728, y: 0, width: 1728, height: 1117)
-        XCTAssertEqual(PushLength.targetLeftEdge(screen: offset, notchLeftArea: notchLeft, notchRightArea: notchRight), -864)
-    }
-
-    func testNoNotchAimsAtTheMiddleOfTheScreen() {
-        let external = CGRect(x: 1728, y: 0, width: 2560, height: 1440)
-        XCTAssertEqual(PushLength.targetLeftEdge(screen: external, notchLeftArea: nil, notchRightArea: nil), 3008)
-    }
-
-    func testReadableMenusWinOverTheNotch() {
-        // The divider stops just short of the menus, so no icon fits and macOS shows no «.
-        XCTAssertEqual(PushLength.targetLeftEdge(screen: screen, notchLeftArea: notchLeft, notchRightArea: notchRight,
-                                                 appMenusMaxX: 312), 322)
-        let external = CGRect(x: 1728, y: 0, width: 2560, height: 1440)
-        XCTAssertEqual(PushLength.targetLeftEdge(screen: external, notchLeftArea: nil, notchRightArea: nil,
-                                                 appMenusMaxX: 2200), 2210)
-    }
-
-    func testMenusOnAnotherScreenAreIgnored() {
-        XCTAssertEqual(PushLength.targetLeftEdge(screen: screen, notchLeftArea: notchLeft, notchRightArea: notchRight,
-                                                 appMenusMaxX: 2200), 864)
+        XCTAssertEqual(PushLength.notch(screen: offset, left: notchLeft, right: notchRight), -956.5 ... -771.5)
     }
 
     func testLegacySystemsKeepClassicPush() {
-        XCTAssertEqual(PushLength.compute(dividerMaxX: 1100, targetLeftEdge: 864, legacy: true), legacyPushLength)
+        XCTAssertEqual(PushLength.compute(dividerMaxX: 1100, screen: screen, notchLeftArea: nil, notchRightArea: nil,
+                                          appMenusMaxX: nil, legacy: true), legacyPushLength)
     }
 
     func testNeverZeroOrNegative() {
-        XCTAssertEqual(PushLength.compute(dividerMaxX: 800, targetLeftEdge: 864, legacy: false), 1)
+        XCTAssertEqual(push(800, menus: nil), 1)
     }
 }
 

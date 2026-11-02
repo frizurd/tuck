@@ -45,10 +45,11 @@ struct SettingsView: View {
                 }
                 .disabled(!preferences.autoHide)
                 Toggle("Scroll on the menu bar to show or hide", isOn: $preferences.scrollToToggle)
+                Toggle("Show the divider line", isOn: $preferences.showDivider)
             } header: {
                 Text("Hiding")
             } footer: {
-                Text("Tuck waits while your pointer is in the menu bar or a menu is open.")
+                Text("Tuck waits while your pointer is in the menu bar or a menu is open. Turn the divider line on while you arrange icons, or ⌃-click the chevron.")
                     .font(.caption).foregroundStyle(.secondary)
                     .multilineTextAlignment(.leading)                    .frame(maxWidth: .infinity, alignment: .leading)
             }

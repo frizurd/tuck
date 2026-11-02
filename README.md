@@ -24,7 +24,7 @@ You'll need Xcode 15 or newer. Tuck runs on macOS 14 Sonoma and later, and it ha
 
 ## Using it
 
-Tuck adds two things to your menu bar: a chevron `‹` and a thin divider `│`.
+Tuck adds a chevron `‹` and a thin divider `│` to your menu bar. The divider line only shows while you set things up. ⌃-click the chevron to show it again when you want to rearrange.
 
 - **Hold ⌘ and drag icons to the left of the divider.** Those are the hidden ones.
 - **Click the chevron** to show them, and click it again to hide them.
@@ -58,11 +58,18 @@ The divider is an ordinary status item. To hide icons, Tuck makes it very wide s
 
 Before macOS 26, apps made the divider 10,000 points wide and the extra icons just ran off the screen. macOS 26 and later lay the menu bar out differently. A status item that would run into the app menus gets ignored completely, which is why Hidden Bar stopped working.
 
-So Tuck stretches the divider to just short of where the front app's menus end. There's no room left for any icon, so macOS quietly drops the icons on the left of the divider. Tuck measures again every time you switch apps. Reading the menu width needs Accessibility access, and Tuck asks for it in Settings under **Hide without the « marker**. It reads only the menu width.
+From testing on macOS 27, two rules decide what happens:
 
-Without that access, Tuck aims the divider's edge at the middle of the notch instead. Nothing can be placed there, so macOS moves the divider and the icons on its left into its own overflow. That always hides them, but macOS then shows a `«` next to the chevron. On macOS 14 and 15, Tuck uses the old 10,000-point trick.
+- A status item longer than about half the screen is ignored.
+- Icons that no longer fit go into the system overflow, and macOS draws a `«` in any free space left of the divider. If the divider reaches all the way to the app menus, there's no free space, and the icons are dropped quietly with no `«`.
 
-The divider's line is blank while the divider is stretched or resizing, so it doesn't slide across the menu bar when you click the chevron.
+So when Tuck can read where the front app's menus end, and reaching them stays under half the screen, it stretches the divider right up to them. That needs Accessibility access, which Tuck asks for in Settings under **Hide without the « marker**. It reads only the menu width, and it measures again whenever you switch apps.
+
+Otherwise Tuck aims the divider's edge at the middle of the notch. That always hides your icons, but macOS shows its `«` next to the chevron. This happens in apps with short menus (Finder, for example) when the chevron sits far to the right, because reaching those menus would take more than half the screen. The more icons you keep to the right of the chevron, the further left it sits, and the more apps hide cleanly. On macOS 14 and 15, Tuck uses the old 10,000-point trick.
+
+Right after you switch apps, Tuck briefly uses the notch method until it has measured the new menus. A divider sized for shorter menus would run into longer ones and be ignored, and your hidden icons would flash back.
+
+The divider's line only shows while you're arranging icons: during setup, or after you ⌃-click the chevron or turn it on in Settings. It stays blank while the divider is stretched or resizing, so it never slides across the menu bar.
 
 Apart from the optional Accessibility access, Tuck needs no permissions, and it makes no network requests. The shortcut uses the Carbon hot key API, which doesn't need any permission. Open at login uses `SMAppService`.
 
@@ -74,7 +81,7 @@ swift test
 
 ## Things I haven't nailed yet
 
-- Without Accessibility access, macOS shows its `«` overflow marker next to the chevron while icons are hidden.
+- macOS shows its `«` overflow marker next to the chevron while icons are hidden, unless Tuck can reach the front app's menus (see above).
 - I've tested on a 14" MacBook Pro with a notch, running macOS 27. Without Accessibility access on a display with no notch, Tuck assumes the app menus use less than half the menu bar, so with very long menus a hidden icon could peek out. Reports from external-display setups are welcome.
 - Status items appear on every display, but Tuck measures from the display its own chevron is on.
 

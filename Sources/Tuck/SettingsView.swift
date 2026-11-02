@@ -1,3 +1,4 @@
+import Combine
 import ServiceManagement
 import SwiftUI
 import TuckCore
@@ -8,6 +9,8 @@ struct SettingsView: View {
 
     @State private var openAtLogin = LoginItem.isEnabled
     @State private var loginError: String?
+    @State private var menusReadable = AppMenus.isTrusted
+    private let trustCheck = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
     var body: some View {
         Form {
@@ -51,6 +54,26 @@ struct SettingsView: View {
             }
 
             Section {
+                LabeledContent {
+                    if menusReadable {
+                        Label("On", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    } else {
+                        Button("Allow Access…") { AppMenus.requestAccess() }
+                    }
+                } label: {
+                    Text("Hide without the « marker")
+                }
+            } footer: {
+                Text(menusReadable
+                     ? "Tuck reads where the app menus end so hidden icons leave no trace."
+                     : "Without Accessibility access, macOS shows a « next to the chevron while icons are hidden. Tuck only reads the width of the app menus.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Section {
                 Toggle("Add an always-hidden section", isOn: $preferences.alwaysHiddenSection)
             } header: {
                 Text("Always Hidden")
@@ -89,6 +112,7 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 460)
         .fixedSize(horizontal: false, vertical: true)
+        .onReceive(trustCheck) { _ in menusReadable = AppMenus.isTrusted }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             openAtLogin = LoginItem.isEnabled || LoginItem.needsApproval
         }

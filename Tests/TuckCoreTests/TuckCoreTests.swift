@@ -84,6 +84,20 @@ final class PushLengthTests: XCTestCase {
         XCTAssertEqual(PushLength.targetLeftEdge(screen: external, notchLeftArea: nil, notchRightArea: nil), 3008)
     }
 
+    func testReadableMenusWinOverTheNotch() {
+        // The divider stops just short of the menus, so no icon fits and macOS shows no «.
+        XCTAssertEqual(PushLength.targetLeftEdge(screen: screen, notchLeftArea: notchLeft, notchRightArea: notchRight,
+                                                 appMenusMaxX: 312), 322)
+        let external = CGRect(x: 1728, y: 0, width: 2560, height: 1440)
+        XCTAssertEqual(PushLength.targetLeftEdge(screen: external, notchLeftArea: nil, notchRightArea: nil,
+                                                 appMenusMaxX: 2200), 2210)
+    }
+
+    func testMenusOnAnotherScreenAreIgnored() {
+        XCTAssertEqual(PushLength.targetLeftEdge(screen: screen, notchLeftArea: notchLeft, notchRightArea: notchRight,
+                                                 appMenusMaxX: 2200), 864)
+    }
+
     func testLegacySystemsKeepClassicPush() {
         XCTAssertEqual(PushLength.compute(dividerMaxX: 1100, targetLeftEdge: 864, legacy: true), legacyPushLength)
     }

@@ -45,6 +45,15 @@ final class MenuBarController: NSObject {
 
         if preferences.alwaysHiddenSection { addAlwaysHiddenItem() }
         observePreferences()
+        watchForAccessibilityGrant()
+        // Each app has its own menus, so the divider's ideal width changes with the front app.
+        NSWorkspace.shared.notificationCenter
+            .publisher(for: NSWorkspace.didActivateApplicationNotification)
+            .sink { [weak self] _ in
+                guard let self, AppMenus.isTrusted else { return }
+                refreshStretchedDividers()
+            }
+            .store(in: &subscriptions)
         // Displays come and go, and the notch only exists on the built-in one.
         NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
             .debounce(for: .seconds(0.5), scheduler: RunLoop.main)
@@ -88,16 +97,43 @@ final class MenuBarController: NSObject {
     }
 
     private func apply(lengths: DividerLengths) {
-        dividerItem.length = lengths.divider ?? dividerWidth
-        alwaysHiddenItem?.length = lengths.alwaysHiddenDivider ?? dividerWidth
+        resize(dividerItem, to: lengths.divider, glyph: Glyphs.divider)
+        if let alwaysHiddenItem {
+            resize(alwaysHiddenItem, to: lengths.alwaysHiddenDivider, glyph: Glyphs.alwaysHiddenDivider)
+        }
     }
 
+    /// macOS animates status items as they resize, so a line drawn in the middle of a
+    /// shrinking divider would glide across the menu bar. Draw nothing while the divider
+    /// is stretched or settling, then put the line back once it has its normal width.
+    private func resize(_ item: NSStatusItem, to stretched: CGFloat?, glyph: NSImage) {
+        let length = stretched ?? dividerWidth
+        guard item.length != length else { return }
+        item.button?.image = nil
+        item.length = length
+        guard stretched == nil else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak item] in
+            guard let item, item.length == length else { return }
+            item.button?.image = glyph
+        }
+    }
+
+    /// The last positions read while every divider had its normal width.
+    private var measuredPositions: ItemPositions?
+
+    /// macOS reports a made-up frame for a stretched divider, so positions are only read
+    /// while the dividers have their normal width. While stretched, the last good reading is
+    /// reused; nothing can be ⌘-dragged in the meantime because the dividers are out of sight.
     private func currentPositions() -> ItemPositions? {
+        let natural = dividerItem.length == dividerWidth && (alwaysHiddenItem?.length ?? dividerWidth) == dividerWidth
+        guard natural else { return measuredPositions }
         guard let toggle = toggleItem.button?.window?.frame,
-              let divider = dividerItem.button?.window?.frame else { return nil }
+              let divider = dividerItem.button?.window?.frame else { return measuredPositions }
         let alwaysHidden = alwaysHiddenItem?.button?.window?.frame
-        return ItemPositions(toggle: toggle.minX, divider: divider.minX, dividerMaxX: divider.maxX,
-                             alwaysHiddenDivider: alwaysHidden?.minX, alwaysHiddenDividerMaxX: alwaysHidden?.maxX)
+        let positions = ItemPositions(toggle: toggle.minX, divider: divider.minX, dividerMaxX: divider.maxX,
+                                      alwaysHiddenDivider: alwaysHidden?.minX, alwaysHiddenDividerMaxX: alwaysHidden?.maxX)
+        measuredPositions = positions
+        return positions
     }
 
     /// The width that pushes every icon left of a divider out of the menu bar.
@@ -105,11 +141,35 @@ final class MenuBarController: NSObject {
         let screen = toggleItem.button?.window?.screen ?? NSScreen.main
         let target = screen.map {
             PushLength.targetLeftEdge(screen: $0.frame, notchLeftArea: $0.auxiliaryTopLeftArea,
-                                      notchRightArea: $0.auxiliaryTopRightArea)
+                                      notchRightArea: $0.auxiliaryTopRightArea, appMenusMaxX: AppMenus.maxX())
         } ?? 0
         let legacy = !ProcessInfo.processInfo.isOperatingSystemAtLeast(
             OperatingSystemVersion(majorVersion: 26, minorVersion: 0, patchVersion: 0))
-        return PushLength.compute(dividerMaxX: dividerMaxX, targetLeftEdge: target, legacy: legacy)
+        let length = PushLength.compute(dividerMaxX: dividerMaxX, targetLeftEdge: target, legacy: legacy)
+        log.debug("push dividerMaxX \(dividerMaxX, privacy: .public) target \(target, privacy: .public) length \(length, privacy: .public)")
+        return length
+    }
+
+    /// Granting access happens in System Settings, so check back until it arrives.
+    private func watchForAccessibilityGrant() {
+        guard !AppMenus.isTrusted else { return }
+        let timer = Timer(timeInterval: 2, repeats: true) { [weak self] timer in
+            guard AppMenus.isTrusted else { return }
+            timer.invalidate()
+            MainActor.assumeIsolated { self?.refreshStretchedDividers() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    /// Re-measures without restarting the auto-hide timer.
+    func refreshStretchedDividers() {
+        guard let positions = currentPositions(), positions.dividerIsUsable else { return }
+        let target = visibility
+        // The new app's menus are laid out a moment after activation.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            guard let self, visibility == target else { return }
+            apply(lengths: DividerLengths.resolve(target, positions: positions, push: pushLength))
+        }
     }
 
     // MARK: Clicks

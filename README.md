@@ -56,11 +56,15 @@ open tuck://settings
 
 The divider is an ordinary status item. To hide icons, Tuck makes it very wide so the icons to its left no longer fit in the menu bar.
 
-Before macOS 26, apps made the divider 10,000 points wide and the extra icons just ran off the screen. macOS 26 and later lay the menu bar out differently. A status item that would run into the app menus gets ignored completely, which is why Hidden Bar stopped working. A status item that can't be placed for another reason goes into the system overflow (the `«` in the menu bar), and every icon to its left goes with it.
+Before macOS 26, apps made the divider 10,000 points wide and the extra icons just ran off the screen. macOS 26 and later lay the menu bar out differently. A status item that would run into the app menus gets ignored completely, which is why Hidden Bar stopped working.
 
-So on a MacBook with a notch, Tuck stretches the divider just far enough that its left edge would land in the middle of the notch. Nothing can be placed there, and the divider never reaches the app menus, so it works no matter which app is in front. Your hidden icons end up in the system `«` overflow, and clicking the chevron brings them back. On macOS 14 and 15, Tuck uses the old 10,000-point trick.
+So Tuck stretches the divider to just short of where the front app's menus end. There's no room left for any icon, so macOS quietly drops the icons on the left of the divider. Tuck measures again every time you switch apps. Reading the menu width needs Accessibility access, and Tuck asks for it in Settings under **Hide without the « marker**. It reads only the menu width.
 
-Tuck doesn't need Accessibility or Screen Recording permission, and it makes no network requests. The shortcut uses the Carbon hot key API, which doesn't need any permission. Open at login uses `SMAppService`.
+Without that access, Tuck aims the divider's edge at the middle of the notch instead. Nothing can be placed there, so macOS moves the divider and the icons on its left into its own overflow. That always hides them, but macOS then shows a `«` next to the chevron. On macOS 14 and 15, Tuck uses the old 10,000-point trick.
+
+The divider's line is blank while the divider is stretched or resizing, so it doesn't slide across the menu bar when you click the chevron.
+
+Apart from the optional Accessibility access, Tuck needs no permissions, and it makes no network requests. The shortcut uses the Carbon hot key API, which doesn't need any permission. Open at login uses `SMAppService`.
 
 The decisions live in `Sources/TuckCore` as plain functions with tests: which divider width to use, when the divider position is valid, when auto-hide should wait, and how shortcuts and URLs are parsed.
 
@@ -70,8 +74,8 @@ swift test
 
 ## Things I haven't nailed yet
 
-- On macOS 26+ the system `«` shows up next to the chevron while icons are hidden. That's macOS showing its overflow, and Tuck can't remove it.
-- I've tested on a 14" MacBook Pro with a notch, running macOS 27. On displays without a notch, Tuck can't measure the app menus without Accessibility access. It assumes they use less than half the menu bar, so with very long menus a hidden icon could peek out. Reports from external-display setups are welcome.
+- Without Accessibility access, macOS shows its `«` overflow marker next to the chevron while icons are hidden.
+- I've tested on a 14" MacBook Pro with a notch, running macOS 27. Without Accessibility access on a display with no notch, Tuck assumes the app menus use less than half the menu bar, so with very long menus a hidden icon could peek out. Reports from external-display setups are welcome.
 - Status items appear on every display, but Tuck measures from the display its own chevron is on.
 
 ## Credits

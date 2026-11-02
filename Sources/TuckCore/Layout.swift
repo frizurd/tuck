@@ -23,10 +23,19 @@ public let legacyPushLength: CGFloat = 10_000
 /// its left. An item that would run into the app menus is ignored instead, which is why
 /// the classic 10,000 pt divider stopped working.
 ///
-/// So on a notched display Tuck aims the divider's left edge at the middle of the notch:
-/// it can't be placed there, it never reaches the app menus, and it doesn't depend on
-/// which app is in front.
+/// An item that runs into the app menus doesn't fit anywhere, so macOS drops it quietly,
+/// without the `«`. So when Tuck can read where the app menus end (that needs
+/// Accessibility access), it stretches the divider to just short of them: no room is
+/// left for any icon, and no `«` appears.
+///
+/// Without that access, Tuck aims the divider's left edge at the middle of the notch.
+/// It can't be placed there, so macOS moves it and every icon on its left into the
+/// system overflow. That always hides them, but macOS shows a `«` while they're hidden.
 public enum PushLength {
+    /// Room left between the app menus and the stretched divider. Less than any status
+    /// icon needs, so nothing fits in it, but enough to absorb the item's own padding.
+    public static let menuGap: CGFloat = 10
+
     /// - Parameters:
     ///   - dividerMaxX: the divider's right edge, which stays put while it grows leftwards.
     ///   - targetLeftEdge: where the stretched divider's left edge should land.
@@ -36,16 +45,20 @@ public enum PushLength {
         return max(dividerMaxX - targetLeftEdge, 1)
     }
 
-    /// The middle of the notch, or the middle of the screen when there is no notch.
-    /// Without a notch the app menus are the only boundary, and Tuck can't read their
-    /// width without Accessibility access, so it assumes they take less than half the bar.
-    public static func targetLeftEdge(screen: CGRect, notchLeftArea: CGRect?, notchRightArea: CGRect?) -> CGFloat {
+    /// Where the stretched divider's left edge should land.
+    /// - Parameter appMenusMaxX: the right edge of the frontmost app's menus, when readable.
+    public static func targetLeftEdge(screen: CGRect, notchLeftArea: CGRect?, notchRightArea: CGRect?,
+                                      appMenusMaxX: CGFloat? = nil) -> CGFloat {
+        if let appMenusMaxX, appMenusMaxX > screen.minX, appMenusMaxX < screen.maxX {
+            return appMenusMaxX + menuGap
+        }
         if let left = notchLeftArea, let right = notchRightArea, right.minX > left.maxX {
             let notchMid = (left.maxX + right.minX) / 2
             // NSScreen reports these areas relative to the screen on some systems, globally on others.
             let isGlobal = right.minX >= screen.minX && right.maxX <= screen.maxX + 1
             return isGlobal ? notchMid : screen.minX + notchMid
         }
+        // Without a notch or readable menus, assume the menus take less than half the bar.
         return screen.midX
     }
 }

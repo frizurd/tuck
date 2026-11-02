@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Builds build/Tuck.app (universal: Apple silicon + Intel).
-# Set TUCK_SIGNING_IDENTITY to a Developer ID to sign for distribution; otherwise ad-hoc.
+# Set TUCK_SIGNING_IDENTITY to sign with a real identity (also keeps the Accessibility grant across rebuilds); otherwise ad-hoc.
 set -euo pipefail
 cd "${0:A:h}"
 

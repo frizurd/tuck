@@ -51,7 +51,9 @@ struct SettingsView: View {
             } header: {
                 Text("Hiding")
             } footer: {
-                Text("Tuck waits while your pointer is in the menu bar or a menu is open. Turn the divider line on while you arrange icons, or ⌃-click the chevron.")
+                Text(menusReadable && NativeHider.isSupported
+                     ? "Tuck waits while your pointer is in the menu bar or a menu is open."
+                     : "Tuck waits while your pointer is in the menu bar or a menu is open. Turn the divider line on while you arrange icons, or ⌃-click the chevron.")
                     .font(.caption).foregroundStyle(.secondary)
                     .multilineTextAlignment(.leading)                    .frame(maxWidth: .infinity, alignment: .leading)
             }

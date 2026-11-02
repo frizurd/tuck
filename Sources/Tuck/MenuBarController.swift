@@ -4,10 +4,11 @@ import OSLog
 import SwiftUI
 import TuckCore
 
-/// Owns Tuck's three status items and the hide/show state.
+/// Owns Tuck's status items and the hide/show state.
 ///
 /// Layout, right to left: `‹ chevron` · `│ divider` · hidden icons · `┆ always-hidden divider` · always-hidden icons.
-/// Hiding widens a divider to 10,000 pt so the icons on its left slide off screen.
+/// On macOS 27+ with Accessibility, macOS hides icons itself (`NativeHider`) and the
+/// chevron is the boundary. Otherwise hiding stretches a divider (see `PushLength`).
 private let log = Logger(subsystem: "com.frizurd.tuck", category: "menubar")
 
 @MainActor
@@ -25,6 +26,12 @@ final class MenuBarController: NSObject {
     private var scrollGesture = ScrollGesture()
     private var misplacedPopover: NSPopover?
     private var subscriptions = Set<AnyCancellable>()
+    private let native = NativeHider()
+    private var dragMonitor: Any?
+
+    /// macOS 27+ with Accessibility: macOS hides icons itself and the chevron is the
+    /// boundary, so the divider and all the stretching below aren't used.
+    private var usesNative: Bool { native.isUsable }
 
     /// Width of a visible divider: wide enough to grab while ⌘-dragging.
     private var dividerWidth: CGFloat { showsDividerLine ? 14 : 4 }
@@ -52,11 +59,12 @@ final class MenuBarController: NSObject {
         observePreferences()
         watchForAccessibilityGrant()
         startMenuWatch()
+        watchMenuBarDrags()
         // Each app has its own menus, so the divider's ideal width changes with the front app.
         NSWorkspace.shared.notificationCenter
             .publisher(for: NSWorkspace.didActivateApplicationNotification)
             .sink { [weak self] _ in
-                guard let self, AppMenus.isTrusted else { return }
+                guard let self, AppMenus.isTrusted, !usesNative else { return }
                 // The new app's menus may be longer than the old ones. A divider sized for the
                 // old menus would run into them and be ignored, bringing hidden icons back, so
                 // switch to the notch-based width (always valid) until the new menus are measured.
@@ -90,6 +98,8 @@ final class MenuBarController: NSObject {
     }
 
     func apply(_ target: BarState, explainIfMisplaced: Bool = true) {
+        if usesNative { return applyNative(target) }
+        dividerItem.isVisible = true
         let positions = currentPositions()
         if target != .showingAll, let positions, !positions.dividerIsUsable {
             // Hiding now would push the chevron itself off screen.
@@ -106,6 +116,53 @@ final class MenuBarController: NSObject {
         visibility = target
         updateToggleAppearance()
         scheduleAutoHide(after: preferences.autoHideDelay)
+    }
+
+    // MARK: Native hiding (macOS 27+)
+
+    private func applyNative(_ target: BarState) {
+        log.debug("native apply \(String(describing: target), privacy: .public) from \(String(describing: self.visibility), privacy: .public)")
+        dividerItem.length = dividerWidth
+        dividerItem.isVisible = false
+        // The always-hidden divider keeps its slot (its position defines that section),
+        // but only shows while everything is revealed, so it can be ⌘-dragged.
+        if let alwaysHiddenItem {
+            alwaysHiddenItem.length = target == .showingAll ? 14 : 0
+            alwaysHiddenItem.button?.image = target == .showingAll ? Glyphs.alwaysHiddenDivider : nil
+        }
+        visibility = target
+        updateToggleAppearance()
+        scheduleAutoHide(after: preferences.autoHideDelay)
+        guard let chevron = toggleItem.button?.window?.frame.midX else { return }
+        let alwaysHidden = alwaysHiddenItem?.button?.window?.frame.midX
+        native.apply(target, chevronMidX: chevron, alwaysHiddenMidX: alwaysHidden) { [weak self] succeeded in
+            guard let self, !succeeded, visibility == target else { return }
+            log.error("native hiding failed; nothing is hidden")
+            visibility = .shown
+            updateToggleAppearance()
+        }
+        if target != .hidden { scheduleSectionRead() }
+    }
+
+    /// Icons can only be located while nothing is restricted, so read them shortly after
+    /// revealing and after every click or drag in the menu bar. Hiding then uses that
+    /// reading straight away instead of waiting a second for a fresh one.
+    private func scheduleSectionRead() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            guard let self, usesNative, visibility != .hidden,
+                  let chevron = toggleItem.button?.window?.frame.midX else { return }
+            native.refreshSections(chevronMidX: chevron, alwaysHiddenMidX: alwaysHiddenItem?.button?.window?.frame.midX)
+        }
+    }
+
+    private func watchMenuBarDrags() {
+        dragMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.usesNative, self.visibility != .hidden,
+                      MenuBarEnvironment.pointerIsInMenuBar() else { return }
+                self.scheduleSectionRead()
+            }
+        }
     }
 
     private func apply(lengths: DividerLengths) {
@@ -171,7 +228,11 @@ final class MenuBarController: NSObject {
         let timer = Timer(timeInterval: 2, repeats: true) { [weak self] timer in
             guard AppMenus.isTrusted else { return }
             timer.invalidate()
-            MainActor.assumeIsolated { self?.restretch(readMenus: true) }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                // Switch to native hiding if this macOS supports it, else re-measure the menus.
+                if self.usesNative { self.apply(self.visibility, explainIfMisplaced: false) } else { self.restretch(readMenus: true) }
+            }
         }
         RunLoop.main.add(timer, forMode: .common)
     }
@@ -190,7 +251,7 @@ final class MenuBarController: NSObject {
     private func startMenuWatch() {
         let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, AppMenus.isTrusted, self.visibility != .showingAll else { return }
+                guard let self, AppMenus.isTrusted, !self.usesNative, self.visibility != .showingAll else { return }
                 let natural = self.dividerWidth
                 let stretched = self.dividerItem.length != natural
                     || (self.alwaysHiddenItem.map { $0.length != natural } ?? false)
@@ -220,7 +281,7 @@ final class MenuBarController: NSObject {
         guard let event = NSApp.currentEvent else { return }
         if event.type == .rightMouseUp {
             showMenu(from: toggleItem)
-        } else if event.modifierFlags.contains(.control) {
+        } else if event.modifierFlags.contains(.control), !usesNative {
             toggleDividerLine()
         } else if event.modifierFlags.contains(.option) {
             apply(visibility == .showingAll ? .hidden : .showingAll)
@@ -273,10 +334,12 @@ final class MenuBarController: NSObject {
             all.state = visibility == .showingAll ? .on : .off
             menu.addItem(all)
         }
-        let line = menuItem("Show Divider Line", #selector(menuDividerLine), key: "")
-        line.state = preferences.showDivider ? .on : .off
-        line.toolTip = "Shortcut: ⌃-click the chevron"
-        menu.addItem(line)
+        if !usesNative {
+            let line = menuItem("Show Divider Line", #selector(menuDividerLine), key: "")
+            line.state = preferences.showDivider ? .on : .off
+            line.toolTip = "Shortcut: ⌃-click the chevron"
+            menu.addItem(line)
+        }
         menu.addItem(.separator())
         menu.addItem(menuItem("Settings…", #selector(menuSettings), key: ","))
         menu.addItem(menuItem("How to Use Tuck", #selector(menuWelcome), key: ""))

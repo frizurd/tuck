@@ -45,7 +45,9 @@ struct SettingsView: View {
                 }
                 .disabled(!preferences.autoHide)
                 Toggle("Scroll on the menu bar to show or hide", isOn: $preferences.scrollToToggle)
-                Toggle("Show the divider line", isOn: $preferences.showDivider)
+                if !(menusReadable && NativeHider.isSupported) {
+                    Toggle("Show the divider line", isOn: $preferences.showDivider)
+                }
             } header: {
                 Text("Hiding")
             } footer: {
@@ -63,12 +65,14 @@ struct SettingsView: View {
                         Button("Allow Access…") { AppMenus.requestAccess() }
                     }
                 } label: {
-                    Text("Hide without the « marker")
+                    Text("Hide icons cleanly")
                 }
             } footer: {
                 Text(menusReadable
-                     ? "Tuck reads where the app menus end so hidden icons leave no trace."
-                     : "Without Accessibility access, macOS shows a « next to the chevron while icons are hidden. Tuck only reads the width of the app menus.")
+                     ? (NativeHider.isSupported
+                        ? "macOS hides the icons left of the chevron itself. No divider and no « marker."
+                        : "Tuck reads where the app menus end so hidden icons leave no trace.")
+                     : "Without Accessibility access, macOS shows a « next to the chevron while icons are hidden. Tuck only reads which app owns each menu bar icon and where the app menus end.")
                     .font(.caption).foregroundStyle(.secondary)
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)

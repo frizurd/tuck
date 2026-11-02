@@ -194,3 +194,36 @@ final class CommandTests: XCTestCase {
         XCTAssertNil(Command.settings.target(from: .hidden))
     }
 }
+
+final class SectionsTests: XCTestCase {
+    func testSidesOfTheChevron() {
+        let icons = [StatusIcon(bundleIdentifier: "left", midX: 900),
+                     StatusIcon(bundleIdentifier: "right", midX: 1400),
+                     StatusIcon(bundleIdentifier: "com.apple.controlcenter", midX: 800),
+                     StatusIcon(bundleIdentifier: "com.frizurd.tuck", midX: 1360)]
+        let sections = Sections.resolve(icons, chevronMidX: 1360, alwaysHiddenMidX: nil, ownBundle: "com.frizurd.tuck")
+        XCTAssertEqual(sections, ["left": .hidden, "right": .visible])
+        XCTAssertEqual(Sections.allowed(sections, in: .hidden), ["right"])
+        XCTAssertEqual(Sections.allowed(sections, in: .shown), ["left", "right"])
+    }
+
+    func testAlwaysHiddenSection() {
+        let icons = [StatusIcon(bundleIdentifier: "far", midX: 700),
+                     StatusIcon(bundleIdentifier: "near", midX: 1000)]
+        let sections = Sections.resolve(icons, chevronMidX: 1360, alwaysHiddenMidX: 800, ownBundle: nil)
+        XCTAssertEqual(sections, ["far": .alwaysHidden, "near": .hidden])
+        XCTAssertEqual(Sections.allowed(sections, in: .shown), ["near"])
+        XCTAssertEqual(Sections.allowed(sections, in: .showingAll), ["far", "near"])
+    }
+
+    func testMisplacedAlwaysHiddenDividerIsIgnored() {
+        let icons = [StatusIcon(bundleIdentifier: "a", midX: 700)]
+        XCTAssertEqual(Sections.resolve(icons, chevronMidX: 1000, alwaysHiddenMidX: 1200, ownBundle: nil), ["a": .hidden])
+    }
+
+    func testMostVisibleIconWinsForAnApp() {
+        let icons = [StatusIcon(bundleIdentifier: "multi", midX: 900),
+                     StatusIcon(bundleIdentifier: "multi", midX: 1400)]
+        XCTAssertEqual(Sections.resolve(icons, chevronMidX: 1360, alwaysHiddenMidX: nil, ownBundle: nil), ["multi": .visible])
+    }
+}

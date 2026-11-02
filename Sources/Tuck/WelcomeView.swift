@@ -22,8 +22,13 @@ struct WelcomeView: View {
                 .padding(.bottom, 38)
 
             VStack(alignment: .leading, spacing: 14) {
-                Step(symbol: "command", title: "Hold ⌘ and drag icons left of the │ divider",
-                     detail: "Anything on the left of it gets tucked away. After setup the line hides; ⌃-click the chevron to show it again.")
+                if NativeHider.isSupported {
+                    Step(symbol: "command", title: "Hold ⌘ and drag icons left of the chevron",
+                         detail: "Anything on the left of it gets tucked away. Allow Accessibility in Settings so macOS can hide them cleanly.")
+                } else {
+                    Step(symbol: "command", title: "Hold ⌘ and drag icons left of the │ divider",
+                         detail: "Anything on the left of it gets tucked away. After setup the line hides; ⌃-click the chevron to show it again.")
+                }
                 Step(symbol: "chevron.left", title: "Click the chevron to bring them back",
                      detail: "Or scroll on the menu bar, or press your own shortcut.")
                 Step(symbol: "timer", title: "They tuck themselves away again",

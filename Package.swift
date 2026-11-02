@@ -7,7 +7,8 @@ let package = Package(
     products: [.executable(name: "Tuck", targets: ["Tuck"])],
     targets: [
         .target(name: "TuckCore"),
-        .executableTarget(name: "Tuck", dependencies: ["TuckCore"]),
+        .target(name: "TuckPrivate"),
+        .executableTarget(name: "Tuck", dependencies: ["TuckCore", "TuckPrivate"]),
         .testTarget(name: "TuckCoreTests", dependencies: ["TuckCore"])
     ]
 )

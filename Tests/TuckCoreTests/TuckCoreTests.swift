@@ -159,6 +159,7 @@ final class CommandTests: XCTestCase {
         XCTAssertEqual(Command(url: URL(string: "tuck://show-all")!), .showAll)
         XCTAssertEqual(Command(url: URL(string: "TUCK://Hide")!), .hide)
         XCTAssertEqual(Command(url: URL(string: "tuck:toggle")!), .toggle)
+        XCTAssertEqual(Command(url: URL(string: "tuck://hide?from=raycast")!), .hide)
         XCTAssertEqual(Command(url: URL(string: "tuck://settings")!), .settings)
         XCTAssertNil(Command(url: URL(string: "tuck://explode")!))
         XCTAssertNil(Command(url: URL(string: "https://show")!))

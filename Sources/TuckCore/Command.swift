@@ -12,9 +12,14 @@ public enum Command: Equatable, Sendable {
     /// Accepts `tuck://show`, `tuck:show`, `tuck://show-all`, etc.
     public init?(url: URL) {
         guard url.scheme?.lowercased() == "tuck" else { return nil }
-        let name = (url.host ?? url.path)
+        // Read the text after "tuck:" directly; Foundation parses opaque URLs
+        // like "tuck:toggle" differently across macOS versions.
+        let text = url.absoluteString
+        let afterScheme = text[text.index(after: text.firstIndex(of: ":")!)...]
+        let name = afterScheme
+            .split(whereSeparator: { "?#".contains($0) }).first.map(String.init)?
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            .lowercased()
+            .lowercased() ?? ""
         switch name {
         case "show", "reveal": self = .show
         case "show-all", "showall", "reveal-all": self = .showAll

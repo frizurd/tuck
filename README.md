@@ -10,7 +10,31 @@ I used [Hidden Bar](https://github.com/dwarvesf/hidden) for years. On macOS 27 i
 
 ## Install
 
-Build it from source. Prebuilt downloads will go on the [Releases](https://github.com/frizurd/tuck/releases) page once there's a notarized build.
+```sh
+brew install --cask frizurd/tap/tuck
+```
+
+Homebrew 7 or newer asks you to trust a tap before installing from it:
+
+```sh
+brew tap frizurd/tap
+brew trust --cask frizurd/tap/tuck
+```
+
+Then run the install command above. The release is signed with Developer ID and notarized by Apple. Tuck runs on macOS 14 Sonoma and later.
+
+Open Tuck from Applications. On macOS 27, open Settings and allow Accessibility under **Hide icons cleanly** so macOS can hide icons without the `«` marker.
+
+To update or remove it:
+
+```sh
+brew upgrade --cask tuck
+brew uninstall --cask tuck
+```
+
+### Build from source
+
+You'll need Xcode 15 or newer. There are no third-party dependencies.
 
 ```sh
 git clone https://github.com/frizurd/tuck.git
@@ -20,7 +44,7 @@ cp -R build/Tuck.app /Applications/
 open /Applications/Tuck.app
 ```
 
-You'll need Xcode 15 or newer. Tuck runs on macOS 14 Sonoma and later, and it has no third-party dependencies.
+Put the app in `/Applications`: on macOS 27, native hiding only recognizes apps there. `./build.sh` signs ad-hoc by default, which means macOS asks for Accessibility again after every rebuild. Set `TUCK_SIGNING_IDENTITY` to one of your signing identities to avoid that. `scripts/release.sh` builds the notarized release and the Homebrew cask.
 
 ## Using it
 

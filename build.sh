@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "${0:A:h}"
 
-version="1.0.0"
+version="${TUCK_VERSION:-1.1.0}"
 build_number="1"
 app="$PWD/build/Tuck.app"
 
